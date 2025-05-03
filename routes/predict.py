@@ -1,12 +1,13 @@
 import io
 
-from fastapi import APIRouter, Depends, Request, UploadFile, File, HTTPException
+from fastapi import APIRouter, Depends, Request, Response, UploadFile, File, HTTPException
 from PIL import Image
 import numpy as np
 
 from utils.predictor import predict_skin_condition
 from schemas.prediction import PredictionResponse
 from utils.recommend import get_recommended_products
+from rate_limit import rate_limited  
 
 router = APIRouter()
 
@@ -30,7 +31,10 @@ def get_model(request: Request):
         "Recommended products for the detected condition will be included if available."
     ),
 )
+@rate_limited(max_calls=3, time_window=60) # Allow 5 requests per miniute(60 seconds)
 async def predict(
+    request: Request,
+    response: Response,
     file: UploadFile = File(...),
     model = Depends(get_model),
 ) -> PredictionResponse:
