@@ -1,8 +1,11 @@
+from config import CLASS_NAMES
 import os, logging, numpy as np, asyncio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from huggingface_hub import hf_hub_download
+from PIL import Image
+import gradio as gr
 
 from api.v1 import router as v1_router
 from models.model_loader import load_skin_condition_model
@@ -40,6 +43,7 @@ async def lifespan(app: FastAPI):
         if hasattr(app.state, "model"):
             del app.state.model
 
+# === FastAPI Setup ===
 app = FastAPI(
     lifespan=lifespan,
     title="Skin Condition Classifier API",
@@ -60,3 +64,36 @@ async def health_check():
     return {"status": "ok"}
 
 app.include_router(v1_router)
+
+# === Gradio UI Setup ===
+def predict_skin_condition(image: Image.Image):
+    if image is None:
+        return "No image provided"
+
+    model = app.state.model
+
+    # Preprocess image
+    img = image.resize((224, 224)).convert("RGB")
+    img_array = np.array(img, dtype=np.uint8)
+    input_data = np.expand_dims(img_array, axis=0)  # Shape: (1, 224, 224, 3)
+
+    # Predict
+    prediction = model.predict(input_data)[0]
+
+    # Map prediction to label (replace with your actual class labels)
+    top_idx = np.argmax(prediction)
+    confidence = float(prediction[top_idx])
+    label = CLASS_NAMES[top_idx]
+
+    return f"{label} ({confidence:.2%} confidence)"
+
+gradio_interface = gr.Interface(
+    fn=predict_skin_condition,
+    inputs=gr.Image(type="pil", label="Upload a skin image"),
+    outputs=gr.Text(label="Prediction"),
+    title="Skin Analyzer",
+    description="Upload a photo of skin to detect conditions like acne, eczema, dryness, etc."
+)
+
+# Mount Gradio on root
+app = gr.mount_gradio_app(app, gradio_interface, path="/")
